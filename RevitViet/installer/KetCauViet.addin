@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Kết Cấu Việt</Name>
+    <Assembly>KetCauViet/KetCauViet.Revit.dll</Assembly>
+    <AddInId>8B8BB7E9-5A18-473F-A86F-5B55E5949B52</AddInId>
+    <FullClassName>KetCauViet.Revit.Application</FullClassName>
+    <VendorId>KCVT</VendorId>
+    <VendorDescription>Công cụ kết cấu và khối lượng tiếng Việt</VendorDescription>
+  </AddIn>
+</RevitAddIns>

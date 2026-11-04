@@ -14,8 +14,9 @@ internal sealed class Field
     public string Label { get; }
     public string Value { get; }
     public string[]? Options { get; }
-    public Field(string key, string label, string value = "", string[]? options = null)
-    { Key = key; Label = label; Value = value; Options = options; }
+    public string Group { get; }
+    public Field(string key, string label, string value = "", string[]? options = null, string group = "Thông số")
+    { Key = key; Label = label; Value = value; Options = options; Group = group; }
 }
 
 internal sealed class InputDialog : Form
@@ -30,32 +31,37 @@ internal sealed class InputDialog : Form
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MinimizeBox = false; MaximizeBox = false;
-        ClientSize = new Size(620, 130 + fields.Length * 48);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(18) };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));
-        var note = new Label { Text = description, AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 0, 0, 16) };
-        layout.Controls.Add(note, 0, 0); layout.SetColumnSpan(note, 2);
-        for (var i = 0; i < fields.Length; i++)
+        var largest = fields.GroupBy(f => f.Group).Select(g => g.Count()).DefaultIfEmpty(1).Max();
+        ClientSize = new Size(780, Math.Min(Screen.PrimaryScreen.WorkingArea.Height - 100, 180 + largest * 52));
+        var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(12, 6) };
+        foreach (var group in fields.GroupBy(f => f.Group))
         {
-            var field = fields[i];
-            layout.Controls.Add(new Label { Text = field.Label, AutoSize = true, Anchor = AnchorStyles.Left }, 0, i + 1);
-            Control control;
-            if (field.Options != null)
+            var page = new TabPage(group.Key) { AutoScroll = true, Padding = new Padding(6) };
+            var layout = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, Padding = new Padding(12) };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+            var row = 0;
+            foreach (var field in group)
             {
-                if (field.Options.Length == 0) throw new InvalidOperationException("Không có lựa chọn cho: " + field.Label);
-                var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
-                combo.Items.AddRange(field.Options); combo.SelectedIndex = 0; control = combo;
+                layout.Controls.Add(new Label { Text = field.Label, AutoSize = true, MaximumSize = new Size(380, 0), Anchor = AnchorStyles.Left, Margin = new Padding(3, 8, 12, 8) }, 0, row);
+                Control control;
+                if (field.Options != null)
+                {
+                    if (field.Options.Length == 0) throw new InvalidOperationException("Không có lựa chọn cho: " + field.Label);
+                    var combo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, DropDownWidth = 690 };
+                    combo.Items.AddRange(field.Options); combo.SelectedIndex = Math.Max(0, Array.IndexOf(field.Options, field.Value)); control = combo;
+                }
+                else control = new TextBox { Text = field.Value, Dock = DockStyle.Fill };
+                control.Margin = new Padding(3, 8, 3, 8); controls.Add(field.Key, control); labels.Add(field.Key, field.Label);
+                layout.Controls.Add(control, 1, row++);
             }
-            else control = new TextBox { Text = field.Value, Dock = DockStyle.Fill };
-            controls.Add(field.Key, control); labels.Add(field.Key, field.Label); layout.Controls.Add(control, 1, i + 1);
+            page.Controls.Add(layout); tabs.TabPages.Add(page);
         }
-        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill };
+        var note = new Label { Text = description, AutoSize = true, MaximumSize = new Size(780, 0), Dock = DockStyle.Top, Padding = new Padding(18, 12, 18, 12) };
+        var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, Height = 58, Dock = DockStyle.Bottom, Padding = new Padding(12) };
         var cancel = new Button { Text = "Hủy", DialogResult = DialogResult.Cancel, AutoSize = true };
         var ok = new Button { Text = "Thực hiện", DialogResult = DialogResult.OK, AutoSize = true };
         buttons.Controls.Add(cancel); buttons.Controls.Add(ok);
-        layout.Controls.Add(buttons, 0, fields.Length + 1); layout.SetColumnSpan(buttons, 2);
-        AcceptButton = ok; CancelButton = cancel; Controls.Add(layout);
+        AcceptButton = ok; CancelButton = cancel; Controls.Add(tabs); Controls.Add(buttons); Controls.Add(note);
     }
 
     public string TextValue(string key) => controls[key].Text.Trim();

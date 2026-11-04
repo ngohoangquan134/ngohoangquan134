@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('2022', '2023', '2024')][string]$RevitVersion = '2024',
+    [ValidateSet('2022', '2023', '2024')][string]$RevitVersion = '2023',
     [switch]$Build
 )
 $ErrorActionPreference = 'Stop'

@@ -7,16 +7,16 @@ internal static class GeometryTools
     public static IEnumerable<Solid> Solids(Element element)
     {
         var geometry = element.get_Geometry(new Options { DetailLevel = ViewDetailLevel.Fine });
-        return geometry == null ? Enumerable.Empty<Solid>() : Walk(geometry, Transform.Identity).ToList();
+        return geometry == null ? Enumerable.Empty<Solid>() : ReadSolids(geometry, Transform.Identity).ToList();
     }
-    private static IEnumerable<Solid> Walk(GeometryElement geometry, Transform transform)
+    internal static IEnumerable<Solid> ReadSolids(GeometryElement geometry, Transform transform)
     {
         foreach (GeometryObject item in geometry)
         {
             if (item is Solid solid && solid.Volume > 1e-8)
-                yield return transform.IsIdentity ? solid : SolidUtils.CreateTransformed(solid, transform);
+                yield return SolidUtils.CreateTransformed(solid, transform);
             else if (item is GeometryInstance instance)
-                foreach (var child in Walk(instance.GetSymbolGeometry(), transform.Multiply(instance.Transform))) yield return child;
+                foreach (var child in ReadSolids(instance.GetSymbolGeometry(), transform.Multiply(instance.Transform))) yield return child;
         }
     }
 

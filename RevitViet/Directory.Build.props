@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <RevitVersion Condition="'$(RevitVersion)' == ''">2024</RevitVersion>
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2023</RevitVersion>
     <BaseIntermediateOutputPath Condition="'$(MSBuildProjectName)' == 'KetCauViet.Revit'">obj/$(RevitVersion)/</BaseIntermediateOutputPath>
     <NuGetLockFilePath Condition="'$(MSBuildProjectName)' == 'KetCauViet.Revit'">packages.$(RevitVersion).lock.json</NuGetLockFilePath>
     <NuGetLockFilePath Condition="'$(MSBuildProjectName)' == 'KetCauViet.Revit' and '$(RevitApiPath)' != ''">obj/$(RevitVersion)/local-api.lock.json</NuGetLockFilePath>

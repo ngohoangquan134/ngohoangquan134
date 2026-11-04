@@ -1,4 +1,4 @@
-﻿param([ValidateSet('2022', '2023', '2024')][string]$RevitVersion = '2024', [string]$RevitApiPath = '')
+﻿param([ValidateSet('2022', '2023', '2024')][string]$RevitVersion = '2023', [string]$RevitApiPath = '')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 Push-Location $projectRoot
@@ -19,6 +19,7 @@ try {
     Copy-Item "artifacts/$RevitVersion/*.dll", "artifacts/$RevitVersion/HUONG-DAN.md", "artifacts/$RevitVersion/revit-version.txt" "$package/KetCauViet/" -Force
     Copy-Item 'docs' "$package/KetCauViet/" -Recurse -Force
     Copy-Item 'scripts/Install.ps1' "$package/Install.ps1" -Force
+    Copy-Item 'installer/KetCauViet.addin' "$package/KetCauViet.addin" -Force
     Copy-Item 'HUONG-DAN.md' "$package/HUONG-DAN.md" -Force
     Copy-Item 'docs' "$package/" -Recurse -Force
     Compress-Archive -Path "$package/*" -DestinationPath "artifacts/KetCauViet-Revit$RevitVersion.zip" -Force

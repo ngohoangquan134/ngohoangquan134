@@ -80,35 +80,95 @@ internal static class RebarTools
     private static void Layout(ToolContext c, string mode)
     {
         var elements = c.Select("Chọn cấu kiện để bố trí thép.", e => mode == "beam" ? ToolContext.Category(e, BuiltInCategory.OST_StructuralFraming) : mode == "floor" ? e is Floor : ToolContext.Category(e, BuiltInCategory.OST_StructuralColumns, BuiltInCategory.OST_Walls));
-        var types = new FilteredElementCollector(c.Doc).OfClass(typeof(RebarBarType)).Cast<RebarBarType>().OrderBy(t => t.Name).ToList();
-        if (types.Count == 0) throw new ArgumentException("Dự án chưa có Rebar Bar Type. Hãy nạp/chọn template kết cấu có loại thép.");
+        var types = new FilteredElementCollector(c.Doc).OfClass(typeof(RebarBarType)).Cast<RebarBarType>().OrderBy(t => t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()).ThenBy(t => t.Name).ToList();
+        if (types.Count == 0) throw new RebarIssue("BAR_TYPE", "Dự án chưa có Rebar Bar Type. Nạp loại thép vào dự án trước khi bố trí.");
+        string Label(RebarBarType t) => t.Name + " · Ø" + ToolContext.N(t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8) + " · ID " + t.Id.IntegerValue;
+        var labels = types.Select(Label).ToArray();
+        var defaultMain = types.OrderBy(t => Math.Abs(t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8 - 16)).First();
+        var defaultTie = types.OrderBy(t => Math.Abs(t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8 - 8)).First();
+        var hasColumn = elements.Any(e => ToolContext.Category(e, BuiltInCategory.OST_StructuralColumns));
+        var hasGrid = elements.Any(e => e is Wall || e is Floor);
+        var hasCage = mode == "beam" || hasColumn;
         var fields = new List<Field>
         {
-            new("main", "Loại thép dọc/lưới", options: types.Select(t => t.Name).ToArray()),
-            new("tie", "Loại thép đai (dầm/cột)", options: types.Select(t => t.Name).ToArray()),
-            new("cover", "Bảo vệ tới mặt thép ngoài (mm)", "25"),
-            new("spacing", mode == "beam" ? "Bước đai (mm)" : mode == "columnwall" ? "Bước đai/lưới vách (mm)" : "Bước lưới (mm)", "150"),
-            new("existing", "Nếu host đã có thép", options: new[] { "Bỏ qua host đó", "Giữ thép cũ và thêm thép mới" })
+            new("main","Rebar Bar Type dọc hoặc lưới",Label(defaultMain),labels,"Chung"),
+            new("diameter","Đường kính danh nghĩa (0 theo Type) mm","0",group:"Chung"),
+            new("coverMode","Chọn lớp bảo vệ",options:new[]{"Theo host và dùng giá trị lớn nhất","Nhập đồng đều cho mọi mặt"},group:"Chung"),
+            new("cover","Lớp bảo vệ nhập (mm)","25",group:"Chung"),
+            new("gap","Khe hở giữa thanh song song hoặc làn nối (mm)","25",group:"Chung"),
+            new("existing","Nếu host đã có thép",options:new[]{"Giữ nguyên và bỏ qua host","Thêm thép và kiểm tra giao với thép cũ"},group:"Chung"),
+            new("verify","Chế độ thực hiện",options:new[]{"Tạo thép và lưu thay đổi","Kiểm tra thử và hoàn tác mọi thay đổi"},group:"Chung"),
+            new("anchor","Kéo dài neo thẳng mỗi đầu (mm)","0",group:"Neo và nối"),
+            new("stock","Chiều dài thanh phân đoạn (0 không chia) mm","0",group:"Neo và nối"),
+            new("lap","Chiều dài nối chồng giữa các phân đoạn (mm)","0",group:"Neo và nối")
         };
-        if (mode == "beam") { fields.Add(new Field("bottom", "Số thép dưới", "3")); fields.Add(new Field("top", "Số thép trên", "2")); }
-        else if (mode == "columnwall") { fields.Add(new Field("nx", "Số thanh/cạnh X của cột", "3")); fields.Add(new Field("ny", "Số thanh/cạnh Y của cột", "3")); }
-        else fields.Add(new Field("layers", "Lớp thép sàn", options: new[] { "Cả trên và dưới", "Chỉ trên", "Chỉ dưới" }));
-        using var input = InputDialog.Ask(c.App, "Bố trí cốt thép", "Theo thông số nhập, chỉ khối hộp chữ nhật. Không tự tính chịu lực, neo/nối hoặc móc đai. Đai là khung kín không móc; cần hoàn thiện cấu tạo trước khi phát hành.", fields.ToArray());
-        var cover = Engineering.Feet(input.Number("cover", 1, 1000)); var spacing = Engineering.Feet(input.Number("spacing", 1, 10000));
-        var main = types[input.Index("main")]; var tie = types[input.Index("tie")];
-        if (spacing <= Math.Max(main.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble(), tie.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble())) throw new ArgumentException("Bước thép phải lớn hơn đường kính thanh.");
-        var bottom = mode == "beam" ? input.Integer("bottom", 2, 100) : 2; var top = mode == "beam" ? input.Integer("top", 2, 100) : 2;
-        var nx = mode == "columnwall" ? input.Integer("nx", 2, 100) : 2; var ny = mode == "columnwall" ? input.Integer("ny", 2, 100) : 2;
-        var layers = mode == "floor" ? input.Index("layers") : 0;
-        var layout = new RebarLayout(c, main, tie, cover, spacing);
-        c.Batch("Bố trí cốt thép", elements, e =>
+        if (mode == "beam")
         {
-            if (input.Index("existing") == 0 && (RebarHostData.GetRebarHostData(e)?.GetRebarsInHost().Count ?? 0) > 0) throw new ArgumentException("Host đã có thép; bỏ qua theo lựa chọn.");
-            if (mode == "beam") layout.Beam(e, bottom, top);
-            else if (mode == "floor") layout.Floor(e, layers);
-            else if (e is Wall) layout.Wall(e);
-            else layout.Column(e, nx, ny);
-        });
+            fields.AddRange(new[]{
+                new Field("bottom","Số thanh dưới","3",group:"Dầm"),
+                new Field("top","Số thanh trên","2",group:"Dầm"),
+                new Field("extraTop","Số thanh tăng cường trên tại mỗi đầu","0",group:"Dầm"),
+                new Field("extraBottom","Số thanh tăng cường dưới giữa nhịp","0",group:"Dầm"),
+                new Field("extraLength","Chiều dài mỗi vùng tăng cường (mm)","1500",group:"Dầm")});
+        }
+        if (hasColumn) fields.AddRange(new[]{
+            new Field("nx","Số thanh trên mỗi cạnh U","3",group:"Cột"),
+            new Field("ny","Số thanh trên mỗi cạnh V","3",group:"Cột"),
+            new Field("auxiliary","Đai phụ cho các thanh giữa cạnh",options:new[]{"Không thêm","Có thêm cùng nhịp đai chính"},group:"Cột")});
+        if (hasCage) fields.AddRange(new[]{
+            new Field("tie","Rebar Bar Type đai",Label(defaultTie),labels,"Đai"),
+            new Field("tieDiameter","Đường kính danh nghĩa đai (0 theo Type) mm","0",group:"Đai"),
+            new Field("hooks","Móc đai",options:new[]{"Móc 135 độ và kiểm tra hình học","Khung kín không móc"},group:"Đai"),
+            new Field("leftLength","Chiều dài vùng đầu từ đai hợp lệ đầu (mm)","0",group:"Đai"),
+            new Field("rightLength","Chiều dài vùng cuối từ đai hợp lệ cuối (mm)","0",group:"Đai"),
+            new Field("leftStep","Bước tối đa vùng đầu (mm)","100",group:"Đai"),
+            new Field("middleStep","Bước tối đa vùng giữa (mm)","150",group:"Đai"),
+            new Field("rightStep","Bước tối đa vùng cuối (mm)","100",group:"Đai")});
+        if (hasGrid) fields.AddRange(new[]{
+            new Field("spacingU","Bước tối đa theo U hoặc thép đứng vách (mm)","150",group:"Lưới"),
+            new Field("spacingV","Bước tối đa theo V hoặc thép ngang vách (mm)","150",group:"Lưới")});
+        if (mode == "floor") fields.Add(new Field("layers", "Lớp thép sàn", options: new[] { "Cả trên và dưới", "Chỉ trên", "Chỉ dưới" }, group: "Lưới"));
+        using var input = InputDialog.Ask(c.App, "Bố trí cốt thép", "Thông số bố trí do bạn nhập, không phải kết quả tính chịu lực. Neo chỉ kéo dài khi đủ bê tông; thanh nối chia thành hai làn lệch vào trong. Thép cũ luôn được giữ nguyên.", fields.ToArray());
+        RebarBarType Resolve(RebarBarType selected, double diameter)
+        {
+            if (diameter == 0) return selected;
+            if (Math.Abs(selected.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8 - diameter) < .05) return selected;
+            var matched = types.FirstOrDefault(t => Math.Abs(t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8 - diameter) < .05);
+            return matched ?? throw new RebarIssue("BAR_TYPE", "Chưa có Rebar Bar Type đường kính " + diameter + " mm. Nạp hoặc tạo Type đúng vật liệu và thông số uốn trước khi chạy.");
+        }
+        var options = new RebarLayoutSettings
+        {
+            Main = Resolve(types[input.Index("main")], input.Number("diameter", 0, 100)),
+            Tie = hasCage ? Resolve(types[input.Index("tie")], input.Number("tieDiameter", 0, 100)) : types[input.Index("main")],
+            CoverFromHost = input.Index("coverMode") == 0,
+            Cover = Engineering.Feet(input.Number("cover", 1, 1000)),
+            ClearGap = Engineering.Feet(input.Number("gap", 0, 1000)),
+            AddToExisting = input.Index("existing") == 1,
+            VerifyOnly = input.Index("verify") == 1,
+            Anchor = Engineering.Feet(input.Number("anchor", 0, 100000)),
+            Stock = Engineering.Feet(input.Number("stock", 0, 100000)),
+            Lap = Engineering.Feet(input.Number("lap", 0, 100000))
+        };
+        if (mode == "beam")
+        {
+            options.Bottom = input.Integer("bottom", 2, 100); options.Top = input.Integer("top", 2, 100);
+            options.ExtraTop = input.Integer("extraTop", 0, 100); options.ExtraBottom = input.Integer("extraBottom", 0, 100);
+            options.ExtraLength = Engineering.Feet(input.Number("extraLength", 0, 100000));
+        }
+        if (hasColumn) { options.Nx = input.Integer("nx", 2, 100); options.Ny = input.Integer("ny", 2, 100); options.AuxiliaryTies = input.Index("auxiliary") == 1; }
+        if (hasCage)
+        {
+            options.Hooks = input.Index("hooks") == 0; options.LeftLength = Engineering.Feet(input.Number("leftLength", 0, 100000)); options.RightLength = Engineering.Feet(input.Number("rightLength", 0, 100000));
+            options.LeftSpacing = Engineering.Feet(input.Number("leftStep", 1, 10000)); options.MiddleSpacing = Engineering.Feet(input.Number("middleStep", 1, 10000)); options.RightSpacing = Engineering.Feet(input.Number("rightStep", 1, 10000));
+        }
+        if (hasGrid) { options.SpacingU = Engineering.Feet(input.Number("spacingU", 1, 10000)); options.SpacingV = Engineering.Feet(input.Number("spacingV", 1, 10000)); }
+        if (mode == "floor") options.Layers = input.Index("layers");
+        options.Description = string.Join("; ", fields.Select(f => f.Label + "=" + input.TextValue(f.Key)));
+        RebarExecution.Run(c, "Bố trí cốt thép", elements, options.Description, (element, log) =>
+        {
+            if (!options.AddToExisting && (RebarHostData.GetRebarHostData(element)?.GetRebarsInHost().Count ?? 0) > 0) throw new RebarIssue("EXISTING", "Host đã có thép; giữ nguyên theo lựa chọn.");
+            new RebarLayout(c, element, options, log).Execute();
+        }, options.VerifyOnly);
     }
 
     public static void RebarUtilities(ToolContext c)

@@ -5,190 +5,313 @@ using KetCauViet.Revit.Infrastructure;
 
 namespace KetCauViet.Revit.Tools;
 
-internal sealed class HostFrame
+internal sealed class RebarLayoutSettings
 {
-    public Element Host { get; }
-    public XYZ X { get; }
-    public XYZ Y { get; }
-    public XYZ Z { get; }
-    public XYZ Min { get; }
-    public XYZ Max { get; }
-    private readonly IList<Solid> solids;
-    public HostFrame(Element host, XYZ x, XYZ y, XYZ z)
-    {
-        Host = host; X = x.Normalize(); Y = y.Normalize(); Z = z.Normalize();
-        if (RebarHostData.GetRebarHostData(host)?.IsValidHost() != true) throw new ArgumentException("Cấu kiện không phải host cốt thép hợp lệ. Kiểm tra Structural Material/Concrete.");
-        if ((host is Wall wall && wall.WallType.GetCompoundStructure()?.LayerCount != 1) ||
-            (host is Floor floor && floor.FloorType.GetCompoundStructure()?.LayerCount != 1))
-            throw new ArgumentException("Chỉ bố trí thép cho sàn/vách một lớp bê tông. Không suy đoán lớp bảo vệ từ lớp hoàn thiện của cấu kiện nhiều lớp.");
-        solids = GeometryTools.Solids(host).ToList();
-        var local = GeometryTools.Vertices(solids).Select(p => new XYZ(p.DotProduct(X), p.DotProduct(Y), p.DotProduct(Z))).ToList();
-        if (local.Count == 0) throw new ArgumentException("Không có hình học solid.");
-        Min = new XYZ(local.Min(p => p.X), local.Min(p => p.Y), local.Min(p => p.Z));
-        Max = new XYZ(local.Max(p => p.X), local.Max(p => p.Y), local.Max(p => p.Z));
-        var boundingVolume = (Max.X - Min.X) * (Max.Y - Min.Y) * (Max.Z - Min.Z);
-        if (boundingVolume <= 1e-8 || Math.Abs(solids.Sum(s => s.Volume) / boundingVolume - 1) > 0.001)
-            throw new ArgumentException("Chỉ nhận khối hộp chữ nhật không lỗ/cắt/vát. Cấu kiện có hình học khác cần bố trí riêng.");
-    }
-
-    public XYZ Point(double x, double y, double z) => X * x + Y * y + Z * z;
-
-    public void Check(IEnumerable<Curve> curves)
-    {
-        foreach (var curve in curves)
-        {
-            var inside = 0.0;
-            foreach (var solid in solids)
-            {
-                using var options = new SolidCurveIntersectionOptions { ResultType = SolidCurveIntersectionMode.CurveSegmentsInside };
-                using var intersection = solid.IntersectWithCurve(curve, options);
-                for (var i = 0; i < intersection.SegmentCount; i++) inside += intersection.GetCurveSegment(i).Length;
-            }
-            if (inside < curve.Length - Engineering.Feet(0.5)) throw new ArgumentException("Đường tâm thép nằm ngoài host. Đã hủy toàn bộ thép của cấu kiện này.");
-        }
-    }
-
-    public static HostFrame Beam(Element host)
-    {
-        if (!(host.Location is LocationCurve location) || !(location.Curve is Line line) || !(host is FamilyInstance instance)) throw new ArgumentException("Chỉ nhận dầm có trục thẳng.");
-        var x = line.Direction.Normalize();
-        var y = instance.GetTransform().BasisY; y = (y - x * y.DotProduct(x)).Normalize();
-        var z = x.CrossProduct(y).Normalize();
-        if (z.Z < 0) { y = -y; z = -z; }
-        // The upper/lower rows follow the family's section orientation, including beam roll.
-        return new HostFrame(host, x, y, z);
-    }
-
-    public static HostFrame Column(Element host)
-    {
-        if (!(host is FamilyInstance instance)) throw new ArgumentException("Chỉ nhận cột family.");
-        var t = instance.GetTransform();
-        if (Math.Abs(t.BasisZ.DotProduct(XYZ.BasisZ)) < 0.99999) throw new ArgumentException("Chỉ hỗ trợ cột thẳng đứng.");
-        return new HostFrame(host, t.BasisX, t.BasisY, t.BasisZ);
-    }
-
-    public static HostFrame Wall(Element host)
-    {
-        if (!(host is Wall wall) || !(wall.Location is LocationCurve location) || !(location.Curve is Line line)) throw new ArgumentException("Chỉ hỗ trợ vách thẳng, đứng, tiết diện chữ nhật.");
-        var x = line.Direction;
-        if (Math.Abs(x.Z) > 1e-6) throw new ArgumentException("Trục vách phải nằm ngang.");
-        return new HostFrame(host, x, XYZ.BasisZ.CrossProduct(x), XYZ.BasisZ);
-    }
-
-    public static HostFrame Floor(Element host)
-    {
-        var faces = HostObjectUtils.GetTopFaces((Floor)host).Select(r => host.GetGeometryObjectFromReference(r)).OfType<PlanarFace>().ToList();
-        if (faces.Count != 1 || faces[0].FaceNormal.Z < 0.99999) throw new ArgumentException("Chỉ hỗ trợ sàn phẳng chữ nhật, không dốc.");
-        var edge = faces[0].GetEdgesAsCurveLoops().SelectMany(loop => loop).OfType<Line>().OrderByDescending(l => l.Length).FirstOrDefault() ?? throw new ArgumentException("Không xác định được cạnh sàn.");
-        var x = edge.Direction;
-        return new HostFrame(host, x, XYZ.BasisZ.CrossProduct(x), XYZ.BasisZ);
-    }
+    public RebarBarType Main { get; set; } = null!;
+    public RebarBarType Tie { get; set; } = null!;
+    public bool CoverFromHost { get; set; } = true;
+    public double Cover { get; set; } = Engineering.Feet(25);
+    public double ClearGap { get; set; } = Engineering.Feet(25);
+    public bool AddToExisting { get; set; }
+    public bool VerifyOnly { get; set; }
+    public bool Hooks { get; set; } = true;
+    public bool AuxiliaryTies { get; set; }
+    public int Bottom { get; set; } = 3;
+    public int Top { get; set; } = 2;
+    public int Nx { get; set; } = 3;
+    public int Ny { get; set; } = 3;
+    public int ExtraTop { get; set; }
+    public int ExtraBottom { get; set; }
+    public double ExtraLength { get; set; } = Engineering.Feet(1500);
+    public double LeftLength { get; set; }
+    public double RightLength { get; set; }
+    public double LeftSpacing { get; set; } = Engineering.Feet(100);
+    public double MiddleSpacing { get; set; } = Engineering.Feet(150);
+    public double RightSpacing { get; set; } = Engineering.Feet(100);
+    public double SpacingU { get; set; } = Engineering.Feet(150);
+    public double SpacingV { get; set; } = Engineering.Feet(150);
+    public int Layers { get; set; }
+    public double Anchor { get; set; }
+    public double Stock { get; set; }
+    public double Lap { get; set; }
+    public string Description { get; set; } = "";
 }
 
 internal sealed class RebarLayout
 {
-    private readonly ToolContext context;
-    private readonly RebarBarType main;
-    private readonly RebarBarType tie;
-    private readonly double cover;
-    private readonly double spacing;
-    private double MainDiameter => main.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble();
-    private double TieDiameter => tie.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble();
-    public RebarLayout(ToolContext context, RebarBarType main, RebarBarType tie, double cover, double spacing)
-    { this.context = context; this.main = main; this.tie = tie; this.cover = cover; this.spacing = spacing; }
+    private readonly ToolContext c;
+    private readonly RebarLayoutSettings options;
+    private readonly RebarHostGeometry f;
+    private readonly Action<string> log;
+    private readonly double cover, d, td;
+    private readonly List<BarPlan> plans = new();
+    private readonly List<BarSegment> acceptedSegments = new();
+    private RebarHookType? hook;
+    private RebarBarType tie;
+    private int positionCount;
+    private const int MaximumPositions = 5000;
 
-    private Rebar Bar(HostFrame frame, RebarBarType type, RebarStyle style, XYZ normal, IList<Curve> curves)
+    private sealed class BarPlan
     {
-        frame.Check(curves);
-        return Rebar.CreateFromCurves(context.Doc, style, type, null, null, frame.Host, normal, curves, RebarHookOrientation.Left, RebarHookOrientation.Right, true, true)
-            ?? throw new InvalidOperationException("Revit không tạo được shape cốt thép.");
+        public IList<XYZ> Points { get; }
+        public XYZ Normal { get; }
+        public RebarBarType Type { get; }
+        public RebarStyle Style { get; }
+        public string Tag { get; }
+        public bool Hook { get; }
+        public BarPlan(IList<XYZ> points, XYZ normal, RebarBarType type, string tag, bool tie = false, bool hook = false)
+        { Points = points; Normal = normal.Normalize(); Type = type; Tag = tag; Style = tie ? RebarStyle.StirrupTie : RebarStyle.Standard; Hook = hook; }
+        public IList<Curve> Curves() => Enumerable.Range(1, Points.Count - 1).Select(i => (Curve)Line.CreateBound(Points[i - 1], Points[i])).ToList();
     }
 
-    private void Straight(HostFrame frame, XYZ start, XYZ end, XYZ normal, double distribution = 0)
+    public RebarLayout(ToolContext c, Element host, RebarLayoutSettings options, Action<string> log)
     {
-        if (start.DistanceTo(end) < context.Doc.Application.ShortCurveTolerance) throw new ArgumentException("Khoảng đặt thép quá ngắn.");
-        var curves = new List<Curve> { Line.CreateBound(start, end) };
-        if (distribution > 0) frame.Check(curves.Select(c => c.CreateTransformed(Transform.CreateTranslation(normal * distribution))));
-        var bar = Bar(frame, main, RebarStyle.Standard, normal, curves);
-        if (distribution > 0)
+        this.c = c; this.options = options; this.log = log; f = new RebarHostGeometry(host, log);
+        RebarTemplates.Validate(options.Main, c.Doc, false);
+        tie = options.Tie; d = RebarTemplates.Diameter(options.Main); td = RebarTemplates.Diameter(tie);
+        cover = RebarTemplates.Cover(host, options.CoverFromHost, options.Cover, log);
+        if (cover <= 0 || !Engineering.Finite(cover)) throw new RebarIssue("COVER", "Lớp bảo vệ phải lớn hơn 0.");
+        if (options.Lap > 0 && options.Stock <= options.Lap) throw new RebarIssue("INPUT", "Nối chồng cần chiều dài phân đoạn lớn hơn chiều dài nối.");
+    }
+
+    public void Execute()
+    {
+        if ((f.Kind == "beam" || f.Kind == "column") && options.Hooks) hook = RebarTemplates.Hook(c.Doc, ref tie, true, log);
+        try { if (f.Kind == "beam") Beam(); else if (f.Kind == "column") Column(); else if (f.Kind == "wall") Wall(); else Floor(); }
+        catch (System.ArgumentException ex) { throw new RebarIssue("INPUT", ex.Message, ex); }
+        if (plans.Count == 0) throw new RebarIssue("COVER", "Không còn vị trí đặt thép sau khi trừ lớp bảo vệ và lỗ mở.");
+        log("Kiểm tra trước khi tạo: " + plans.Count + " vị trí; cover=" + cover * 304.8 + " mm; model diameters=" + d * 304.8 + "/" + td * 304.8 + " mm");
+        foreach (var p in plans) foreach (var curve in p.Curves()) f.RequireClearance(curve, cover + RebarTemplates.Diameter(p.Type) / 2, p.Tag);
+        RebarTemplates.EnsureSeed(c.Doc, log);
+        var created = new List<(Rebar Bar, string Tag)>();
+        foreach (var group in Compress(plans)) created.Add((Create(group), group[0].Tag));
+        c.Doc.Regenerate();
+        var segments = new List<BarSegment>();
+        foreach (var item in created) ReadSegments(item.Bar, item.Tag, segments, true, true);
+        var clash = RebarClashes.FindCollision(segments, Engineering.Feet(.2), Engineering.Feet(200));
+        if (clash.HasValue) throw new RebarIssue("COVER", "Hai thanh mới giao nhau: " + clash.Value.First + " / " + clash.Value.Second + ". Kiểm tra khoảng cách, lớp tăng cường hoặc làn nối.");
+        if (options.AddToExisting)
         {
-            var count = Engineering.SpacingCount(distribution, spacing);
-            if (count > 1002) throw new ArgumentException("Số thanh trong một bộ vượt giới hạn Revit. Tăng khoảng cách hoặc chia vùng đặt thép.");
-            bar.GetShapeDrivenAccessor().SetLayoutAsMaximumSpacing(spacing, distribution, true, true, true);
+            var newIds = new HashSet<ElementId>(created.Select(x => x.Bar.Id)); var old = new List<BarSegment>();
+            foreach (var bar in RebarHostData.GetRebarHostData(f.Host).GetRebarsInHost().Where(r => !newIds.Contains(r.Id))) ReadSegments(bar, "CŨ ID " + bar.Id.IntegerValue, old, false);
+            var mixed = RebarClashes.FindCollision(segments.Concat(old), Engineering.Feet(.2), Engineering.Feet(200), (a, b) => !a.StartsWith("CŨ", StringComparison.Ordinal) || !b.StartsWith("CŨ", StringComparison.Ordinal));
+            if (mixed.HasValue) throw new RebarIssue("EXISTING_CLASH", "Thép mới giao với thép đang có: " + mixed.Value.First + " / " + mixed.Value.Second + ". Không sửa hoặc xóa thép cũ.");
+        }
+        log("Đã kiểm tra mọi vị trí sau Regenerate, gồm móc/uốn, cover và giao thép; objects=" + created.Count + "; positions=" + positionCount);
+    }
+
+    private void Add(BarPlan plan)
+    {
+        if (plans.Count >= MaximumPositions) throw new RebarIssue("INPUT", "Host vượt 5000 vị trí thanh. Chia vùng hoặc tăng bước trước khi chạy.");
+        if (plan.Points.Zip(plan.Points.Skip(1), (a, b) => a.DistanceTo(b)).Any(length => length < c.Doc.Application.ShortCurveTolerance)) throw new RebarIssue("PROFILE", plan.Tag + ": đoạn ngắn hơn ShortCurveTolerance.");
+        plans.Add(plan);
+    }
+    private IReadOnlyList<double> Across(double a, double b, int count)
+    {
+        if (b <= a) throw new RebarIssue("COVER", "Không đủ tiết diện sau khi trừ cover, đai và đường kính.");
+        if (count == 1) return new[] { (a + b) / 2 };
+        if ((b - a) / (count - 1) < d + options.ClearGap) throw new RebarIssue("COVER", "Khoảng hở giữa các thanh dọc nhỏ hơn giá trị nhập. Giảm số lượng/đường kính hoặc sửa tiết diện.");
+        return Engineering.EvenPositions(a, b, count);
+    }
+    private void Longitudinal(double u, double v, double start, double end, XYZ normal, XYZ inward, string tag)
+    {
+        var point = f.Point(u, v, start); var intervals = f.SafeIntervals(point, f.Point(u, v, end), cover + d / 2);
+        if (intervals.Count != 1) throw new RebarIssue("COVER", tag + ": đường thép bị mất đoạn hoặc không đủ cover sau Join/Cut; cần chia vùng hoặc sửa thông số.");
+        var interval = intervals[0]; log(tag + ": tâm thanh S=" + (start + interval.Start) * 304.8 + ".." + (start + interval.End) * 304.8 + " mm");
+        AddStraight(point + f.Axis * interval.Start, point + f.Axis * interval.End, normal, inward, tag);
+    }
+    private void AddStraight(XYZ a, XYZ b, XYZ normal, XYZ inward, string tag)
+    {
+        var direction = (b - a).Normalize(); a -= direction * options.Anchor; b += direction * options.Anchor;
+        if (options.Anchor > 0) log(tag + ": kéo dài neo thẳng mỗi đầu " + options.Anchor * 304.8 + " mm; không rút ngắn khi thiếu bê tông.");
+        var pieces = RebarPlanning.Splice(0, a.DistanceTo(b), options.Stock, options.Lap);
+        for (var i = 0; i < pieces.Count; i++)
+        {
+            var offset = i % 2 == 0 ? XYZ.Zero : inward.Normalize() * (d + options.ClearGap);
+            Add(new BarPlan(new[] { a + direction * pieces[i].Start + offset, a + direction * pieces[i].End + offset }, normal, options.Main, tag + " / đoạn " + (i + 1)));
         }
     }
-
-    private void Ties(HostFrame frame, XYZ[] points, XYZ normal, double distribution)
+    private (double U0, double U1, double V0, double V1) MainRectangle()
     {
-        if (distribution <= context.Doc.Application.ShortCurveTolerance) throw new ArgumentException("Chiều dài vùng đai không đủ.");
-        if (Engineering.SpacingCount(distribution, spacing) > 1002) throw new ArgumentException("Vượt giới hạn số đai trong một bộ Revit.");
-        var curves = Enumerable.Range(0, 4).Select(i => (Curve)Line.CreateBound(points[i], points[(i + 1) % 4])).ToList();
-        frame.Check(curves.Select(c => c.CreateTransformed(Transform.CreateTranslation(normal * distribution))));
-        var rebar = Bar(frame, tie, RebarStyle.StirrupTie, normal, curves);
-        rebar.GetShapeDrivenAccessor().SetLayoutAsMaximumSpacing(spacing, distribution, true, true, true);
+        RebarTemplates.Validate(tie, c.Doc, true);
+        var t = cover + td / 2; var bend = (tie.StirrupTieBendDiameter + td) / 2;
+        var inset = RebarClearance.LongitudinalInset(td / 2, d / 2, bend);
+        var a = f.Min.X + t + inset; var b = f.Max.X - t - inset; var x = f.Min.Y + t + inset; var y = f.Max.Y - t - inset;
+        if (b - a < d || y - x < d) throw new RebarIssue("COVER", "Tiết diện không đủ cho đường kính uốn đai, thép dọc và cover.");
+        return (a, b, x, y);
     }
-
-    private static void Range(double lower, double upper)
-    { if (upper <= lower) throw new ArgumentException("Tiết diện không đủ cho lớp bảo vệ và đường kính thép đã nhập."); }
-
-    public void Beam(Element host, int bottom, int top)
+    private void Beam()
     {
-        var f = HostFrame.Beam(host); var d = cover + TieDiameter + MainDiameter / 2;
-        var x0 = f.Min.X + cover + MainDiameter / 2; var x1 = f.Max.X - cover - MainDiameter / 2;
-        var y0 = f.Min.Y + d; var y1 = f.Max.Y - d; var z0 = f.Min.Z + d; var z1 = f.Max.Z - d;
-        Range(x0, x1); Range(y0, y1); Range(z0, z1);
-        if (z1 - z0 < MainDiameter) throw new ArgumentException("Thép trên và dưới bị chồng lấn; tiết diện quá thấp.");
-        if ((y1 - y0) / (Math.Max(bottom, top) - 1) < MainDiameter) throw new ArgumentException("Thép dọc bị chồng lấn; giảm số thanh hoặc đường kính.");
-        foreach (var y in Engineering.EvenPositions(y0, y1, bottom)) Straight(f, f.Point(x0, y, z0), f.Point(x1, y, z0), f.Z);
-        foreach (var y in Engineering.EvenPositions(y0, y1, top)) Straight(f, f.Point(x0, y, z1), f.Point(x1, y, z1), f.Z);
-        var t = cover + TieDiameter / 2;
-        var tx = f.Min.X + t; var ty0 = f.Min.Y + t; var ty1 = f.Max.Y - t; var tz0 = f.Min.Z + t; var tz1 = f.Max.Z - t;
-        Ties(f, new[] { f.Point(tx, ty0, tz0), f.Point(tx, ty1, tz0), f.Point(tx, ty1, tz1), f.Point(tx, ty0, tz1) }, f.X, f.Max.X - f.Min.X - 2 * t);
-    }
-
-    public void Column(Element host, int nx, int ny)
-    {
-        var f = HostFrame.Column(host); var d = cover + TieDiameter + MainDiameter / 2;
-        var x0 = f.Min.X + d; var x1 = f.Max.X - d; var y0 = f.Min.Y + d; var y1 = f.Max.Y - d;
-        var z0 = f.Min.Z + cover + MainDiameter / 2; var z1 = f.Max.Z - cover - MainDiameter / 2;
-        Range(x0, x1); Range(y0, y1); Range(z0, z1);
-        if ((x1 - x0) / (nx - 1) < MainDiameter || (y1 - y0) / (ny - 1) < MainDiameter) throw new ArgumentException("Thép dọc bị chồng lấn.");
-        foreach (var x in Engineering.EvenPositions(x0, x1, nx))
-            foreach (var y in new[] { y0, y1 }) Straight(f, f.Point(x, y, z0), f.Point(x, y, z1), f.X);
-        foreach (var y in Engineering.EvenPositions(y0, y1, ny).Skip(1).Take(ny - 2))
-            foreach (var x in new[] { x0, x1 }) Straight(f, f.Point(x, y, z0), f.Point(x, y, z1), f.X);
-        var t = cover + TieDiameter / 2; var z = f.Min.Z + t;
-        Ties(f, new[] { f.Point(f.Min.X + t, f.Min.Y + t, z), f.Point(f.Max.X - t, f.Min.Y + t, z), f.Point(f.Max.X - t, f.Max.Y - t, z), f.Point(f.Min.X + t, f.Max.Y - t, z) }, f.Z, f.Max.Z - f.Min.Z - 2 * t);
-    }
-
-    public void Wall(Element host)
-    {
-        var f = HostFrame.Wall(host); var d = MainDiameter; var edge = cover + d / 2;
-        var x0 = f.Min.X + edge; var x1 = f.Max.X - edge; var z0 = f.Min.Z + edge; var z1 = f.Max.Z - edge;
-        Range(x0, x1); Range(z0, z1);
-        if (f.Max.Y - f.Min.Y <= 2 * cover + 4 * d) throw new ArgumentException("Vách quá mỏng cho hai lớp thép hai phương.");
-        foreach (var side in new[] { false, true })
+        var r = MainRectangle();
+        foreach (var u in Across(r.U0, r.U1, options.Bottom)) Longitudinal(u, r.V0, f.Min.Z, f.Max.Z, f.U, f.V, "Dầm dưới");
+        foreach (var u in Across(r.U0, r.U1, options.Top)) Longitudinal(u, r.V1, f.Min.Z, f.Max.Z, f.U, -f.V, "Dầm trên");
+        if ((options.ExtraTop > 0 || options.ExtraBottom > 0) && options.ExtraLength <= 0) throw new RebarIssue("INPUT", "Chiều dài thép tăng cường phải dương.");
+        if (options.ExtraTop > 0)
         {
-            var yVertical = side ? f.Max.Y - edge : f.Min.Y + edge;
-            var yHorizontal = side ? yVertical - d : yVertical + d;
-            Straight(f, f.Point(x0, yVertical, z0), f.Point(x0, yVertical, z1), f.X, x1 - x0);
-            Straight(f, f.Point(x0, yHorizontal, z0), f.Point(x1, yHorizontal, z0), f.Z, z1 - z0);
+            if (2 * (options.ExtraLength + options.Anchor) > f.Max.Z - f.Min.Z) throw new RebarIssue("INPUT", "Hai vùng tăng cường trên chồng nhau; giảm chiều dài hoặc bố trí thanh liên tục.");
+            foreach (var u in Across(r.U0, r.U1, options.ExtraTop))
+            {
+                var v = r.V1 - d - options.ClearGap;
+                Longitudinal(u, v, f.Min.Z, f.Min.Z + options.ExtraLength, f.U, -f.V, "Tăng cường trên đầu");
+                Longitudinal(u, v, f.Max.Z - options.ExtraLength, f.Max.Z, f.U, -f.V, "Tăng cường trên cuối");
+            }
+        }
+        if (options.ExtraBottom > 0)
+        {
+            if (options.ExtraLength > f.Max.Z - f.Min.Z) throw new RebarIssue("INPUT", "Thép tăng cường giữa nhịp dài hơn dầm.");
+            var middle = (f.Min.Z + f.Max.Z) / 2;
+            foreach (var u in Across(r.U0, r.U1, options.ExtraBottom)) Longitudinal(u, r.V0 + d + options.ClearGap, middle - options.ExtraLength / 2, middle + options.ExtraLength / 2, f.U, f.V, "Tăng cường dưới giữa nhịp");
+        }
+        Cage(false, r);
+    }
+    private void Column()
+    {
+        var r = MainRectangle(); var center = f.Point((r.U0 + r.U1) / 2, (r.V0 + r.V1) / 2, f.Min.Z);
+        foreach (var u in Across(r.U0, r.U1, options.Nx)) foreach (var v in new[] { r.V0, r.V1 }) Longitudinal(u, v, f.Min.Z, f.Max.Z, f.U, center - f.Point(u, v, f.Min.Z), "Cột dọc cạnh U " + v);
+        foreach (var v in Across(r.V0, r.V1, options.Ny).Skip(1).Take(options.Ny - 2)) foreach (var u in new[] { r.U0, r.U1 }) Longitudinal(u, v, f.Min.Z, f.Max.Z, f.V, center - f.Point(u, v, f.Min.Z), "Cột dọc cạnh V " + u);
+        Cage(true, r);
+    }
+    private void Cage(bool column, (double U0, double U1, double V0, double V1) main)
+    {
+        var t = cover + td / 2; var u0 = f.Min.X + t; var u1 = f.Max.X - t; var v0 = f.Min.Y + t; var v1 = f.Max.Y - t;
+        var bend = (tie.StirrupTieBendDiameter + td) / 2;
+        if (u1 - u0 <= 2 * bend || v1 - v0 <= 2 * bend) throw new RebarIssue("BAR_TYPE", "Bán kính uốn đai không vừa kích thước tâm đai.");
+        var start = f.Min.Z; var end = f.Max.Z;
+        foreach (var uv in new[] { new UV(u0, v0), new UV(u1, v0), new UV(u1, v1), new UV(u0, v1) })
+        {
+            var intervals = f.SafeIntervals(f.Point(uv.U, uv.V, f.Min.Z), f.Point(uv.U, uv.V, f.Max.Z), t);
+            if (intervals.Count != 1) throw new RebarIssue("PROFILE", "Lồng đai bị gián đoạn bởi lỗ/cắt; không thể rải một lồng liên tục an toàn.");
+            start = Math.Max(start, f.Min.Z + intervals[0].Start); end = Math.Min(end, f.Min.Z + intervals[0].End);
+        }
+        var auxiliary = column && options.AuxiliaryTies && (options.Nx > 2 || options.Ny > 2); var shift = td + Engineering.Feet(2);
+        if (options.Hooks) { start += td; end -= td; log("Dự phòng 1 đường kính theo trục mỗi đầu cho phần móc/đai tránh tự giao."); }
+        if (auxiliary && !options.Hooks) throw new RebarIssue("INPUT", "Đai phụ cần móc 135°. Hãy bật chế độ móc.");
+        var auxiliaryOffset = auxiliary ? shift * ((options.Nx > 2 && options.Ny > 2) ? 2 : 1) : 0;
+        if (auxiliary) end -= auxiliaryOffset;
+        if (end - start <= c.Doc.Application.ShortCurveTolerance) throw new RebarIssue("COVER", "Không có vùng đủ dài cho lồng đai sau khi xét đầu cắt và cover.");
+        if (new[] { options.LeftSpacing, options.MiddleSpacing, options.RightSpacing }.Min() < td + Engineering.Feet(2) + auxiliaryOffset) throw new RebarIssue("INPUT", "Bước đai quá nhỏ gây giao đai hoặc đai phụ.");
+        var stations = RebarPlanning.Zones(start, end, options.LeftLength, options.RightLength, options.LeftSpacing, options.MiddleSpacing, options.RightSpacing);
+        log("Đai 3 vùng: S=" + start * 304.8 + ".." + end * 304.8 + " mm; số vị trí=" + stations.Count);
+        var seam = RebarClearance.HookSeam(Across(main.U0, main.U1, column ? options.Nx : options.Top));
+        foreach (var s in stations)
+        {
+            XYZ[] points;
+            if (options.Hooks)
+            {
+                var middle = seam; var half = td;
+                if (u1 - u0 <= 2 * bend + 2 * half) throw new RebarIssue("BAR_TYPE", "Đai quá hẹp để bố trí mối mở và hai móc 135°.");
+                points = new[] { f.Point(middle + half, v1, s), f.Point(u1, v1, s), f.Point(u1, v0, s), f.Point(u0, v0, s), f.Point(u0, v1, s), f.Point(middle - half, v1, s) };
+            }
+            else points = new[] { f.Point(u0, v0, s), f.Point(u1, v0, s), f.Point(u1, v1, s), f.Point(u0, v1, s), f.Point(u0, v0, s) };
+            Add(new BarPlan(points, f.Axis, tie, "Đai chính", true, options.Hooks));
+            if (!auxiliary) continue;
+            foreach (var u in Across(main.U0, main.U1, options.Nx).Skip(1).Take(options.Nx - 2)) Add(new BarPlan(new[] { f.Point(u + (d + td) / 2, v0, s + shift), f.Point(u + (d + td) / 2, v1, s + shift) }, f.Axis, tie, "Đai phụ U", true, true));
+            var vShift = options.Nx > 2 ? 2 * shift : shift;
+            foreach (var v in Across(main.V0, main.V1, options.Ny).Skip(1).Take(options.Ny - 2)) Add(new BarPlan(new[] { f.Point(u0, v + (d + td) / 2, s + vShift), f.Point(u1, v + (d + td) / 2, s + vShift) }, f.Axis, tie, "Đai phụ V", true, true));
         }
     }
-
-    public void Floor(Element host, int layers)
+    private void Wall()
     {
-        var f = HostFrame.Floor(host); var d = MainDiameter; var edge = cover + d / 2;
-        var x0 = f.Min.X + edge; var x1 = f.Max.X - edge; var y0 = f.Min.Y + edge; var y1 = f.Max.Y - edge;
-        Range(x0, x1); Range(y0, y1);
-        var needed = layers == 0 ? 2 * cover + 4 * d : 2 * cover + 2 * d;
-        if (f.Max.Z - f.Min.Z <= needed) throw new ArgumentException("Sàn quá mỏng cho số lớp và đường kính đã chọn.");
-        foreach (var top in layers == 0 ? new[] { false, true } : new[] { layers == 1 })
+        if (options.SpacingU < d + options.ClearGap || options.SpacingV < d + options.ClearGap) throw new RebarIssue("INPUT", "Bước lưới vách nhỏ hơn đường kính cộng khoảng hở.");
+        var r = cover + d / 2; var lo = f.Min.Y + r; var hi = f.Max.Y - r;
+        if (hi - lo < 3 * d + options.ClearGap) throw new RebarIssue("COVER", "Vách không đủ chiều dày cho hai lớp thép đứng/ngang và khe hở giữa hai lưới.");
+        var masks = f.PlanarMask(r, f.V);
+        foreach (var back in new[] { false, true })
         {
-            var zX = top ? f.Max.Z - edge : f.Min.Z + edge;
-            var zY = top ? zX - d : zX + d;
-            Straight(f, f.Point(x0, y0, zX), f.Point(x1, y0, zX), f.Y, y1 - y0);
-            Straight(f, f.Point(x0, y0, zY), f.Point(x0, y1, zY), f.X, x1 - x0);
+            var y = back ? hi : lo; var inner = back ? -f.V : f.V; var horizontal = back ? y - d : y + d;
+            foreach (var u in RebarPlanning.Spaced(f.Min.X + r + RebarHostGeometry.Tolerance, f.Max.X - r - RebarHostGeometry.Tolerance, options.SpacingU)) Grid(f.Point(u, y, f.Min.Z - 1), f.Point(u, y, f.Max.Z + 1), f.U, inner, "Vách đứng " + back, masks);
+            foreach (var z in RebarPlanning.Spaced(f.Min.Z + r + RebarHostGeometry.Tolerance, f.Max.Z - r - RebarHostGeometry.Tolerance, options.SpacingV)) Grid(f.Point(f.Min.X - 1, horizontal, z), f.Point(f.Max.X + 1, horizontal, z), f.Axis, inner, "Vách ngang " + back, masks);
+        }
+    }
+    private void Floor()
+    {
+        if (options.SpacingU < d + options.ClearGap || options.SpacingV < d + options.ClearGap) throw new RebarIssue("INPUT", "Bước lưới sàn nhỏ hơn đường kính cộng khoảng hở.");
+        var r = cover + d / 2; var needed = options.Layers == 0 ? 2 * cover + 4 * d + options.ClearGap : 2 * cover + 2 * d;
+        if (f.Max.Z - f.Min.Z < needed) throw new RebarIssue("COVER", "Sàn không đủ chiều dày cho số lớp và khoảng hở đã nhập.");
+        var masks = f.PlanarMask(r, f.Axis);
+        foreach (var top in options.Layers == 0 ? new[] { false, true } : new[] { options.Layers == 1 })
+        {
+            var z = top ? f.Max.Z - r : f.Min.Z + r; var second = top ? z - d : z + d; var inward = top ? -f.Axis : f.Axis;
+            foreach (var v in RebarPlanning.Spaced(f.Min.Y + r + RebarHostGeometry.Tolerance, f.Max.Y - r - RebarHostGeometry.Tolerance, options.SpacingV)) Grid(f.Point(f.Min.X - 1, v, z), f.Point(f.Max.X + 1, v, z), f.V, inward, "Sàn U " + top, masks);
+            foreach (var u in RebarPlanning.Spaced(f.Min.X + r + RebarHostGeometry.Tolerance, f.Max.X - r - RebarHostGeometry.Tolerance, options.SpacingU)) Grid(f.Point(u, f.Min.Y - 1, second), f.Point(u, f.Max.Y + 1, second), f.U, inward, "Sàn V " + top, masks);
+        }
+    }
+    private void Grid(XYZ start, XYZ end, XYZ normal, XYZ inward, string tag, IList<Solid> masks)
+    {
+        var line = Line.CreateBound(start, end); var direction = (end - start).Normalize(); var intervals = new List<LinearInterval>();
+        foreach (var mask in masks)
+        {
+            using var option = new SolidCurveIntersectionOptions(); using var result = mask.IntersectWithCurve(line, option);
+            for (var i = 0; i < result.SegmentCount; i++) { var segment = result.GetCurveSegment(i); var a = (segment.GetEndPoint(0) - start).DotProduct(direction); var b = (segment.GetEndPoint(1) - start).DotProduct(direction); intervals.Add(new LinearInterval(Math.Min(a, b), Math.Max(a, b))); }
+        }
+        foreach (var segment in RebarPlanning.MergeIntervals(intervals, RebarHostGeometry.Tolerance)) if (segment.Length > c.Doc.Application.ShortCurveTolerance) AddStraight(start + direction * segment.Start, start + direction * segment.End, normal, inward, tag);
+    }
+    private static IEnumerable<IList<BarPlan>> Compress(IEnumerable<BarPlan> source)
+    {
+        foreach (var tagged in source.GroupBy(p => p.Tag + ";" + p.Type.Id.IntegerValue + ";" + p.Points.Count))
+        {
+            var ordered = tagged.OrderBy(p => p.Points[0].DotProduct(p.Normal)).ToList(); var batch = new List<BarPlan>(); double step = 0;
+            foreach (var plan in ordered)
+            {
+                var same = true;
+                if (batch.Count > 0)
+                {
+                    var previous = batch[batch.Count - 1]; var delta = plan.Points[0] - previous.Points[0]; var distance = delta.DotProduct(previous.Normal);
+                    same = distance > 1e-7 && (delta - previous.Normal * distance).GetLength() < 1e-7 && plan.Normal.DotProduct(previous.Normal) > .999999;
+                    if (same) same = plan.Points.Zip(previous.Points, (a, b) => (a - b - delta).GetLength()).All(error => error < 1e-7);
+                    if (same && batch.Count > 1) same = Math.Abs(distance - step) < 1e-7; if (same) step = distance;
+                }
+                if (!same || batch.Count == 1002) { yield return batch; batch = new List<BarPlan>(); step = 0; }
+                batch.Add(plan);
+            }
+            if (batch.Count > 0) yield return batch;
+        }
+    }
+    private Rebar Create(IList<BarPlan> group)
+    {
+        var p = group[0]; var errors = new List<string>();
+        var orientations = p.Hook ? new[] { (RebarHookOrientation.Left, RebarHookOrientation.Left), (RebarHookOrientation.Left, RebarHookOrientation.Right), (RebarHookOrientation.Right, RebarHookOrientation.Left), (RebarHookOrientation.Right, RebarHookOrientation.Right) } : new[] { (RebarHookOrientation.Left, RebarHookOrientation.Right) };
+        foreach (var orientation in orientations)
+        {
+            using var sub = new SubTransaction(c.Doc); sub.Start();
+            try
+            {
+                var bar = Rebar.CreateFromCurves(c.Doc, p.Style, p.Type, p.Hook ? hook : null, p.Hook ? hook : null, f.Host, p.Normal, p.Curves(), orientation.Item1, orientation.Item2, true, true);
+                if (bar == null) throw new RebarIssue("BAR_TYPE", "CreateFromCurves không tìm/tạo được Shape phù hợp; kiểm tra RebarShape và tham số uốn.");
+                if (group.Count > 1) bar.GetShapeDrivenAccessor().SetLayoutAsFixedNumber(group.Count, group[0].Points[0].DistanceTo(group[group.Count - 1].Points[0]), true, true, true);
+                c.Doc.Regenerate(); var check = new List<BarSegment>(); ReadSegments(bar, p.Tag, check, true);
+                var current = new HashSet<string>(check.Select(segment => segment.Bar));
+                var clash = RebarClashes.FindCollision(acceptedSegments.Concat(check), Engineering.Feet(.2), Engineering.Feet(200), (a, b) => current.Contains(a) || current.Contains(b));
+                if (clash.HasValue) throw new RebarIssue("COVER", "Hướng móc hoặc thanh chồng với thanh đã rải: " + clash.Value.First + " / " + clash.Value.Second);
+                if (sub.Commit() != TransactionStatus.Committed) throw new RebarIssue("REBAR_API", "Revit hoàn tác giao dịch con tạo thanh.");
+                acceptedSegments.AddRange(check);
+                log("Tạo " + p.Tag + "; ID=" + bar.Id.IntegerValue + "; positions=" + bar.NumberOfBarPositions + "; hooks=" + orientation); return bar;
+            }
+            catch (Exception ex)
+            {
+                if (sub.GetStatus() == TransactionStatus.Started) sub.RollBack(); errors.Add(ex.Message);
+                if (!p.Hook) throw new RebarIssue((ex as RebarIssue)?.Kind ?? "REBAR_API", p.Tag + ": " + ex.Message, ex);
+                log("Móc " + orientation + " không hợp lệ: " + ex);
+            }
+        }
+        throw new RebarIssue("COVER", p.Tag + ": không có hướng móc nào thỏa hình học/cover. " + string.Join(" | ", errors.Distinct()));
+    }
+    private void ReadSegments(Rebar bar, string tag, IList<BarSegment> segments, bool checkCover, bool count = false)
+    {
+        var radius = RebarTemplates.Diameter((RebarBarType)c.Doc.GetElement(bar.GetTypeId())) / 2;
+        for (var index = 0; index < bar.NumberOfBarPositions; index++)
+        {
+            if (!bar.DoesBarExistAtPosition(index)) continue; if (count) positionCount++;
+            var curves = bar.GetTransformedCenterlineCurves(true, false, false, MultiplanarOption.IncludeAllMultiplanarCurves, index);
+            if (curves.Count == 0) throw new RebarIssue("REBAR_API", "Không đọc được đường tâm sau khi tạo: ID " + bar.Id.IntegerValue + ", vị trí " + index);
+            foreach (var curve in curves)
+            {
+                if (checkCover) f.RequireClearance(curve, cover + radius, tag + " ID " + bar.Id.IntegerValue + " #" + index);
+                IList<XYZ> points;
+                if (curve is Arc arc) { var step = 2 * Math.Acos(Math.Max(-1, 1 - Engineering.Feet(.05) / arc.Radius)); var n = Math.Max(2, (int)Math.Ceiling(arc.Length / arc.Radius / step)); points = Enumerable.Range(0, n + 1).Select(i => arc.Evaluate((double)i / n, true)).ToList(); }
+                else points = curve.Tessellate();
+                for (var i = 1; i < points.Count; i++) segments.Add(new BarSegment(RebarHostGeometry.Vec(points[i - 1]), RebarHostGeometry.Vec(points[i]), radius, tag + " ID " + bar.Id.IntegerValue + " #" + index));
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿param([ValidateSet('2022', '2023', '2024')][string]$RevitVersion = '2024')
+﻿param([ValidateSet('2022', '2023', '2024')][string]$RevitVersion = '2023')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $package = Join-Path $root "artifacts/package-$RevitVersion"
@@ -11,6 +11,11 @@ Get-ChildItem (Join-Path $root 'scripts') -Filter '*.ps1' | ForEach-Object {
     if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
 }
 Write-Host 'PASS: PowerShell parser'
+[xml]$portable = Get-Content (Join-Path $package 'KetCauViet.addin') -Raw
+if ($portable.RevitAddIns.AddIn.FullClassName -ne 'KetCauViet.Revit.Application' -or
+    $portable.RevitAddIns.AddIn.AddInId -ne '8B8BB7E9-5A18-473F-A86F-5B55E5949B52' -or
+    -not (Test-Path (Join-Path $package $portable.RevitAddIns.AddIn.Assembly))) { throw 'Manifest portable không trỏ đúng DLL/entry point.' }
+Write-Host 'PASS: packaged portable addin manifest'
 
 $sandbox = Join-Path $root ('artifacts/installer-test-' + [guid]::NewGuid().ToString('N'))
 $originalOs = $env:OS; $originalAppData = $env:APPDATA
