@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2024</RevitVersion>
+    <ApiVersion Condition="'$(RevitVersion)' == '2022'">2022.1.1</ApiVersion>
+    <ApiVersion Condition="'$(RevitVersion)' == '2023'">2023.0.1</ApiVersion>
+    <ApiVersion Condition="'$(RevitVersion)' == '2024'">2024.0.0</ApiVersion>
+    <OutputPath>../../artifacts/$(RevitVersion)/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <DefineConstants>$(DefineConstants);REVIT$(RevitVersion)</DefineConstants>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../KetCauViet.Core/KetCauViet.Core.csproj" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(ApiVersion)" PrivateAssets="all" IncludeAssets="compile" Condition="'$(RevitApiPath)' == ''" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(ApiVersion)" PrivateAssets="all" IncludeAssets="compile" Condition="'$(RevitApiPath)' == ''" />
+    <Reference Include="RevitAPI" Condition="'$(RevitApiPath)' != ''"><HintPath>$(RevitApiPath)/RevitAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="RevitAPIUI" Condition="'$(RevitApiPath)' != ''"><HintPath>$(RevitApiPath)/RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <None Include="../../HUONG-DAN.md" Link="HUONG-DAN.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../docs/KIEM-THU-REVIT.md" Link="docs/KIEM-THU-REVIT.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="ValidateRevitVersion" BeforeTargets="PrepareForBuild" Condition="'$(ApiVersion)' == ''">
+    <Error Text="Chỉ hỗ trợ RevitVersion=2022, 2023 hoặc 2024." />
+  </Target>
+</Project>
