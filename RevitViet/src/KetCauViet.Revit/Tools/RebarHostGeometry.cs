@@ -5,7 +5,7 @@ using KetCauViet.Revit.Infrastructure;
 
 namespace KetCauViet.Revit.Tools;
 
-internal sealed class RebarIssue : Exception
+internal class RebarIssue : Exception
 {
     public string Kind { get; }
     public RebarIssue(string kind, string message, Exception? inner = null) : base(message, inner) => Kind = kind;

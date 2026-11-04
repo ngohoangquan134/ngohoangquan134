@@ -13,9 +13,13 @@ namespace KetCauViet.Revit.Infrastructure;
 internal sealed class ToolContext
 {
     public UIApplication App { get; }
-    public UIDocument Ui => App.ActiveUIDocument;
-    public Document Doc => Ui.Document;
-    public ToolContext(UIApplication app) => App = app;
+    public UIDocument Ui { get; }
+    public Document Doc { get; }
+    public ToolContext(UIApplication app)
+    {
+        App=app;Ui=app.ActiveUIDocument??throw new InvalidOperationException("Không có dự án Revit đang mở.");
+        Doc=Ui.Document;
+    }
     public static string N(double number) => number.ToString("0.###", CultureInfo.GetCultureInfo("vi-VN"));
     public static string Id(Element element) => element.Id.IntegerValue.ToString(CultureInfo.InvariantCulture);
 

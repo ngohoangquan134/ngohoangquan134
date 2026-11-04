@@ -77,21 +77,29 @@ internal static class RebarTools
     public static void ColumnWallRebar(ToolContext c) => Layout(c, "columnwall");
     public static void FloorRebar(ToolContext c) => Layout(c, "floor");
 
-    private static void Layout(ToolContext c, string mode)
+    private static void Layout(ToolContext c,string mode)
+    {
+        using var catalog=new RebarTypeCatalog(c);
+        try{Layout(c,mode,catalog);}
+        catch(RebarConfigurationIssue ex){RebarExecution.ReportConfiguration(c,"Bố trí cốt thép",ex,string.Join("\n",catalog.Rejected));}
+    }
+
+    private static void Layout(ToolContext c, string mode,RebarTypeCatalog catalog)
     {
         var elements = c.Select("Chọn cấu kiện để bố trí thép.", e => mode == "beam" ? ToolContext.Category(e, BuiltInCategory.OST_StructuralFraming) : mode == "floor" ? e is Floor : ToolContext.Category(e, BuiltInCategory.OST_StructuralColumns, BuiltInCategory.OST_Walls));
-        var types = new FilteredElementCollector(c.Doc).OfClass(typeof(RebarBarType)).Cast<RebarBarType>().OrderBy(t => t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble()).ThenBy(t => t.Name).ToList();
-        if (types.Count == 0) throw new RebarIssue("BAR_TYPE", "Dự án chưa có Rebar Bar Type. Nạp loại thép vào dự án trước khi bố trí.");
-        string Label(RebarBarType t) => t.Name + " · Ø" + ToolContext.N(t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8) + " · ID " + t.Id.IntegerValue;
-        var labels = types.Select(Label).ToArray();
-        var defaultMain = types.OrderBy(t => Math.Abs(t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8 - 16)).First();
-        var defaultTie = types.OrderBy(t => Math.Abs(t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8 - 8)).First();
+        var types=catalog.Collect(false,"thép dọc/chính");
+        string Label(TypeChoice t)=>RebarTypeCatalog.Label(t);
+        var labels=types.Select(Label).ToArray();
+        var defaultMain=types.OrderBy(t=>Math.Abs(t.NominalMm-16)).First();
         var hasColumn = elements.Any(e => ToolContext.Category(e, BuiltInCategory.OST_StructuralColumns));
         var hasGrid = elements.Any(e => e is Wall || e is Floor);
         var hasCage = mode == "beam" || hasColumn;
+        var tieTypes=hasCage?catalog.Collect(true,"thép đai"):types;
+        var defaultTie=tieTypes.OrderBy(t=>Math.Abs(t.NominalMm-8)).First();
+        var defaultDistribution=types.OrderBy(t=>Math.Abs(t.NominalMm-12)).First();
         var fields = new List<Field>
         {
-            new("main","Rebar Bar Type dọc hoặc lưới",Label(defaultMain),labels,"Chung"),
+            new("main","Rebar Bar Type thép dọc/chính",Label(defaultMain),labels,"Chung"),
             new("diameter","Đường kính danh nghĩa (0 theo Type) mm","0",group:"Chung"),
             new("coverMode","Chọn lớp bảo vệ",options:new[]{"Theo host và dùng giá trị lớn nhất","Nhập đồng đều cho mọi mặt"},group:"Chung"),
             new("cover","Lớp bảo vệ nhập (mm)","25",group:"Chung"),
@@ -116,7 +124,7 @@ internal static class RebarTools
             new Field("ny","Số thanh trên mỗi cạnh V","3",group:"Cột"),
             new Field("auxiliary","Đai phụ cho các thanh giữa cạnh",options:new[]{"Không thêm","Có thêm cùng nhịp đai chính"},group:"Cột")});
         if (hasCage) fields.AddRange(new[]{
-            new Field("tie","Rebar Bar Type đai",Label(defaultTie),labels,"Đai"),
+            new Field("tie","Rebar Bar Type đai",Label(defaultTie),tieTypes.Select(Label).ToArray(),"Đai"),
             new Field("tieDiameter","Đường kính danh nghĩa đai (0 theo Type) mm","0",group:"Đai"),
             new Field("hooks","Móc đai",options:new[]{"Móc 135 độ và kiểm tra hình học","Khung kín không móc"},group:"Đai"),
             new Field("leftLength","Chiều dài vùng đầu từ đai hợp lệ đầu (mm)","0",group:"Đai"),
@@ -125,21 +133,27 @@ internal static class RebarTools
             new Field("middleStep","Bước tối đa vùng giữa (mm)","150",group:"Đai"),
             new Field("rightStep","Bước tối đa vùng cuối (mm)","100",group:"Đai")});
         if (hasGrid) fields.AddRange(new[]{
+            new Field("distribution","Rebar Bar Type thép phân bố",Label(defaultDistribution),labels,"Lưới"),
+            new Field("distributionDiameter","Đường kính phân bố (0 theo Type) mm","0",group:"Lưới"),
             new Field("spacingU","Bước tối đa theo U hoặc thép đứng vách (mm)","150",group:"Lưới"),
             new Field("spacingV","Bước tối đa theo V hoặc thép ngang vách (mm)","150",group:"Lưới")});
         if (mode == "floor") fields.Add(new Field("layers", "Lớp thép sàn", options: new[] { "Cả trên và dưới", "Chỉ trên", "Chỉ dưới" }, group: "Lưới"));
         using var input = InputDialog.Ask(c.App, "Bố trí cốt thép", "Thông số bố trí do bạn nhập, không phải kết quả tính chịu lực. Neo chỉ kéo dài khi đủ bê tông; thanh nối chia thành hai làn lệch vào trong. Thép cũ luôn được giữ nguyên.", fields.ToArray());
-        RebarBarType Resolve(RebarBarType selected, double diameter)
+        TypeChoice Resolve(TypeChoice selected,double diameter,bool stirrup,string role)
         {
-            if (diameter == 0) return selected;
-            if (Math.Abs(selected.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8 - diameter) < .05) return selected;
-            var matched = types.FirstOrDefault(t => Math.Abs(t.get_Parameter(BuiltInParameter.REBAR_BAR_DIAMETER).AsDouble() * 304.8 - diameter) < .05);
-            return matched ?? throw new RebarIssue("BAR_TYPE", "Chưa có Rebar Bar Type đường kính " + diameter + " mm. Nạp hoặc tạo Type đúng vật liệu và thông số uốn trước khi chạy.");
+            catalog.Resolve(selected,stirrup);
+            if(diameter==0||selected.MatchesNominal(diameter))return selected;
+            var matching=catalog.Collect(stirrup,role).Where(t=>t.MatchesNominal(diameter)).ToList();
+            if(matching.Count==0)throw new RebarConfigurationIssue("DIAMETER_MISSING","Không có Type "+role+" Ø"+diameter+" mm trong dự án này. Nạp hoặc tạo đúng Type rồi chọn lại; không dùng đường kính khác.");
+            using var choice=InputDialog.Ask(c.App,"Xác nhận Type "+role,"Đường kính nhập khác Type đã chọn. Chọn rõ Type Ø"+diameter+" mm để sử dụng.",new Field("type","Type đúng đường kính",options:matching.Select(Label).ToArray()));
+            var result=matching[choice.Index("type")];catalog.Resolve(result,stirrup);return result;
         }
+        var mainChoice=Resolve(types[input.Index("main")],input.Number("diameter",0,100),false,"thép dọc/chính");
+        var tieChoice=hasCage?Resolve(tieTypes[input.Index("tie")],input.Number("tieDiameter",0,100),true,"thép đai"):mainChoice;
+        var distributionChoice=hasGrid?Resolve(types[input.Index("distribution")],input.Number("distributionDiameter",0,100),false,"thép phân bố"):mainChoice;
         var options = new RebarLayoutSettings
         {
-            Main = Resolve(types[input.Index("main")], input.Number("diameter", 0, 100)),
-            Tie = hasCage ? Resolve(types[input.Index("tie")], input.Number("tieDiameter", 0, 100)) : types[input.Index("main")],
+            Main=mainChoice,Tie=tieChoice,Distribution=distributionChoice,
             CoverFromHost = input.Index("coverMode") == 0,
             Cover = Engineering.Feet(input.Number("cover", 1, 1000)),
             ClearGap = Engineering.Feet(input.Number("gap", 0, 1000)),
@@ -163,12 +177,12 @@ internal static class RebarTools
         }
         if (hasGrid) { options.SpacingU = Engineering.Feet(input.Number("spacingU", 1, 10000)); options.SpacingV = Engineering.Feet(input.Number("spacingV", 1, 10000)); }
         if (mode == "floor") options.Layers = input.Index("layers");
-        options.Description = string.Join("; ", fields.Select(f => f.Label + "=" + input.TextValue(f.Key)));
+        options.Description = string.Join("; ", fields.Select(f => f.Label + "=" + input.TextValue(f.Key)))+"; EFFECTIVE: main="+Label(mainChoice)+"; tie="+Label(tieChoice)+"; distribution="+Label(distributionChoice);
         RebarExecution.Run(c, "Bố trí cốt thép", elements, options.Description, (element, log) =>
         {
             if (!options.AddToExisting && (RebarHostData.GetRebarHostData(element)?.GetRebarsInHost().Count ?? 0) > 0) throw new RebarIssue("EXISTING", "Host đã có thép; giữ nguyên theo lựa chọn.");
-            new RebarLayout(c, element, options, log).Execute();
-        }, options.VerifyOnly);
+            new RebarLayout(c, element, options,catalog, log).Execute();
+        }, options.VerifyOnly,log=>catalog.Preflight(options,hasCage,hasGrid,log));
     }
 
     public static void RebarUtilities(ToolContext c)

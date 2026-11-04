@@ -11,7 +11,7 @@ internal static class Documentation
     {
         var dialog = new TaskDialog("Kết Cấu Việt")
         {
-            MainInstruction = "KẾT CẤU VIỆT 2.0 · 27 công cụ tiếng Việt",
+            MainInstruction = "KẾT CẤU VIỆT 2.0.1 · 27 công cụ tiếng Việt",
             MainContent = "Kết cấu · Cốt thép · Bản vẽ · Khối lượng\n\nChọn đối tượng trước khi bấm lệnh, hoặc làm theo thanh trạng thái Revit. ESC để hủy; Undo để hoàn tác. Số liệu nhập dùng mm, báo cáo dùng m, m², m³ và kg. Thép đặt theo thông số bạn nhập, không tính thiết kế chịu lực.\n\nBản build: Revit " + Version,
             CommonButtons = TaskDialogCommonButtons.Close
         };

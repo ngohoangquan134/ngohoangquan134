@@ -1,4 +1,4 @@
-# Bố trí cốt thép phiên bản 2 cho Revit 2023
+# Bố trí cốt thép phiên bản 2.0.1 cho Revit 2023
 
 Bản này thay thuật toán rải thép dầm, cột, vách và sàn; giữ nguyên 27 nút và tab KẾT CẤU VIỆT. Target là Revit 2023, Windows x64, .NET Framework 4.8. Thông số nhập là yêu cầu bố trí của người dùng, không phải kết quả tính chịu lực hoặc kiểm tra tiêu chuẩn thiết kế.
 
@@ -7,7 +7,7 @@ Bản này thay thuật toán rải thép dầm, cột, vách và sàn; giữ ng
 1. Tải `KetCauViet-Revit2023.zip` từ nhánh cập nhật trên GitHub, giải nén toàn bộ vào một thư mục.
 2. Lưu dự án và đóng tất cả cửa sổ Revit.
 3. Mở PowerShell trong thư mục giải nén, chạy `.\Install.ps1 -RevitVersion 2023`.
-4. Mở Revit 2023, kiểm tra tab KẾT CẤU VIỆT. DLL bản cập nhật có file version 2.0.0.0.
+4. Mở Revit 2023, kiểm tra tab KẾT CẤU VIỆT và Hướng dẫn **2.0.1**. DLL bản cập nhật có file version **2.0.1.0**; dòng đầu log ghi `KCV rebar 2.0.1`.
 
 Installer tạo manifest có đường dẫn tuyệt đối tại `%APPDATA%\Autodesk\Revit\Addins\2023\KetCauViet.addin`, DLL ở thư mục `KetCauViet` cùng cấp. ZIP cũng có manifest tương đối `KetCauViet.addin` để cài thủ công: chép file này và nguyên thư mục `KetCauViet` vào đúng thư mục Addins\2023. Không chép DLL Autodesk từ NuGet vào Revit; gói không chứa RevitAPI.dll/RevitAPIUI.dll.
 
@@ -17,13 +17,16 @@ Chọn một nhóm cấu kiện rồi dùng Thép dầm, Thép cột/vách hoặ
 
 Sau khi kiểm tra hình học và thông số đạt yêu cầu, chạy lại ở chế độ **Tạo thép và lưu thay đổi**. Các host thành công được giữ; host lỗi được hoàn tác riêng. Có thể Undo cả lần chạy thành công bằng một thao tác.
 
+Riêng lỗi cấu hình loại thép chung được kiểm tra trước khi mở nhóm giao dịch. Nếu type bị mất/xóa/đổi hoặc Document không còn đúng sau khi mở hộp thoại, dừng và yêu cầu chạy lại để chọn lại. Nếu phát hiện giữa batch thì hoàn tác toàn bộ thay đổi mới của batch; không lặp cùng lỗi BAR_TYPE cho hàng trăm host. Log ghi loại thép của từng role, ID/UniqueId, snapshot tham số và native Document equality. Xem [nguyên nhân và cách sửa](PHAN-TICH-LOI-BAR-TYPE.md).
+
 Mặc định host đã có thép được giữ nguyên và bỏ qua. Chế độ thêm sẽ kiểm tra giao giữa thép mới và thép cũ có thể đọc qua API; không tự xóa, di chuyển hoặc thay type của thép cũ.
 
 ## Các tab thông số
 
 ### Chung
 
-- Chọn Rebar Bar Type hoặc nhập đường kính danh nghĩa. Đường kính nhập phải có Type tương ứng trong dự án; nếu Type đang chọn khớp thì ưu tiên giữ Type đó. Kích thước bao thép dùng **đường kính mô hình**, có thể lớn hơn đường kính danh nghĩa.
+- Danh sách Rebar Bar Type được lấy mới từ Document hiện tại, chỉ hiển thị type hợp lệ kèm tên, đường kính danh nghĩa và ID. Chọn thép dọc/chính ở tab Chung, thép đai ở tab Đai, thép phân bố ở tab Lưới. Mỗi lần chạy có phạm vi lựa chọn riêng; tên/ID trùng giữa hai dự án không làm type dùng được chéo Document.
+- Đường kính nhập **0** dùng đúng Type đã chọn. Nhập khác thì phải có đúng Type tương ứng và xác nhận chọn ở hộp thoại tiếp; thiếu loại sẽ hướng dẫn nạp/tạo, không dùng đường kính gần nhất. Kích thước bao thép dùng **đường kính mô hình**, có thể lớn hơn đường kính danh nghĩa.
 - **Theo host**: đọc các Rebar Cover Type top/bottom/other/interior/exterior, lấy giá trị lớn nhất và áp dụng đồng đều. Đây là lựa chọn bảo thủ được ghi rõ trong UI và log, không tự suy đoán từng mặt.
 - **Nhập đồng đều**: dùng cover nhập cho mọi mặt của lớp bê tông kết cấu. Cover đo từ bề mặt bê tông đến bề mặt thanh thép ngoài.
 - Khe hở áp dụng cho các thanh song song và làn nối; các thanh hai phương tiếp xúc đúng bề mặt được phép.
@@ -58,9 +61,9 @@ Neo nhập là **kéo dài thẳng mỗi đầu của thanh** sau khi xác đị
 
 ### Lưới vách và sàn
 
-Vách thẳng, đứng: hai lưới trong/ngoài, mỗi lưới có thép đứng và ngang. Thép ngang lệch một đường kính so với thép đứng. Bước U là bước các thanh đứng; bước V là bước các thanh ngang.
+Vách thẳng, đứng: hai lưới trong/ngoài, mỗi lưới có thép đứng (type chính) và ngang (type phân bố). Hai phương lệch nhau bằng tổng hai bán kính mô hình để tiếp xúc bề mặt, kể cả khi khác đường kính. Bước U là bước các thanh đứng; bước V là bước các thanh ngang.
 
-Sàn: hai phương theo hệ trục của mặt phẳng sàn, chọn trên, dưới hoặc cả hai. Các mặt trên/dưới phải phẳng và song song, có chiều dày nhất quán. Có thể xử lý biên đa giác, sàn xoay, mặt nghiêng đều và lỗ mở khi API offset/clip được biên. Không thay lỗ mở bằng hộp bao. Nếu vùng sau offset tự giao hoặc quá hẹp, cần chia vùng hoặc sửa thông số.
+Sàn: phương U dùng type chính, phương V dùng type phân bố, chọn trên, dưới hoặc cả hai. Tính offset và cover theo đường kính từng phương. Các mặt trên/dưới phải phẳng và song song, có chiều dày nhất quán. Có thể xử lý biên đa giác, sàn xoay, mặt nghiêng đều và lỗ mở khi API offset/clip được biên. Không thay lỗ mở bằng hộp bao. Nếu vùng sau offset tự giao hoặc quá hẹp, cần chia vùng hoặc sửa thông số.
 
 Vách/sàn một lớp dùng kiểm tra host gốc của Revit, không yêu cầu thêm Asset ngoài điều kiện của API để tránh loại thư viện hợp lệ. Với nhiều lớp, lấy lớp được chỉ định bằng StructuralMaterialIndex và xác minh Structural Asset Concrete, trừ các lớp hoàn thiện. Nếu chưa chỉ định lớp chịu lực hoặc cấu tạo biến thiên không thể xác định chắc chắn thì từ chối cụ thể. Hình học thực sau Join/Cut vẫn được kiểm tra ở bước cuối.
 
@@ -77,7 +80,7 @@ Vách/sàn một lớp dùng kiểm tra host gốc của Revit, không yêu cầ
 
 ## Đọc lỗi và log
 
-Hộp thoại luôn hiện Element ID và tối đa bốn nguyên nhân đầu. Có nút mở log hoặc chọn các cấu kiện lỗi. Log UTF-8 tại:
+Lỗi từng host hiện Element ID và tối đa bốn nguyên nhân đầu; có nút mở log hoặc chọn các cấu kiện lỗi. Lỗi cấu hình type chung có hộp thoại tổng hợp một lần, không gán cùng lỗi cho mỗi host. Log UTF-8 tại:
 
 `%LOCALAPPDATA%\KetCauViet\Logs\rebar-*.log`
 
@@ -87,7 +90,7 @@ Log ghi thông số nhập, Type ID, vật liệu/host, số solid, thể tích 
 |---|---|
 | HOST | Danh mục, vật liệu bê tông, Structural hoặc Rebar Host chưa hợp lệ |
 | PROFILE | Tiết diện, trục cong, biên offset/lỗ mở hoặc vùng đai liên tục chưa xử lý được |
-| BAR_TYPE | Thiếu Type/Shape, đường kính hoặc đường kính uốn không hợp lệ |
+| BAR_TYPE | Lỗi type chung có mã chi tiết (Document, định danh, hiệu lực, thay đổi, diameter/bend) và dừng batch; lỗi Shape hoặc type không vừa riêng hình học vẫn được rollback theo host |
 | COVER | Thiếu chỗ cho cover/thép, neo vượt bê tông, móc/uốn sai vị trí hoặc thanh mới giao nhau |
 | INPUT | Thông số vùng, số thanh, bước, chiều dài neo/nối không hợp lệ |
 | EXISTING | Host đã có thép và được giữ nguyên theo lựa chọn; đếm là bỏ qua, không phải lỗi |

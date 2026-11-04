@@ -1,10 +1,10 @@
 # KẾT CẤU VIỆT — plugin Revit bằng tiếng Việt
 
-Bản cập nhật 2.0 cho **Revit 2023 trên Windows x64**, .NET Framework 4.8. Mã nguồn vẫn giữ cấu hình tham chiếu riêng cho 2022.1/2024; gói phát hành của lần nâng cấp này là Revit 2023. Có 27 lệnh tương ứng các nút nhìn thấy trong ảnh tham khảo, tổ chức thành tab **KẾT CẤU VIỆT**. Đây là mã triển khai độc lập; ảnh không mô tả thuật toán, tùy chọn trong các menu xổ xuống hoặc quy tắc bóc khối lượng của phần mềm gốc.
+Bản cập nhật 2.0.1 cho **Revit 2023 trên Windows x64**, .NET Framework 4.8. Mã nguồn vẫn giữ cấu hình tham chiếu riêng cho 2022.1/2024; gói phát hành của lần nâng cấp này là Revit 2023. Có 27 lệnh tương ứng các nút nhìn thấy trong ảnh tham khảo, tổ chức thành tab **KẾT CẤU VIỆT**. Đây là mã triển khai độc lập; ảnh không mô tả thuật toán, tùy chọn trong các menu xổ xuống hoặc quy tắc bóc khối lượng của phần mềm gốc.
 
 ## Cài bản đã build
 
-1. Chọn gói đúng phiên bản Revit và giải nén toàn bộ ZIP vào một thư mục.
+1. Tải `KetCauViet-Revit2023.zip` trên nhánh `fix/revit2023-bar-type-ownership-20261104` của repository GitHub. Trang file: <https://github.com/ngohoangquan134/ngohoangquan134/blob/fix/revit2023-bar-type-ownership-20261104/RevitViet/artifacts/KetCauViet-Revit2023.zip>. Bấm **Download raw file** để tải về Windows, rồi giải nén toàn bộ ZIP vào một thư mục.
 2. Lưu dự án rồi đóng Revit.
 3. Mở PowerShell tại thư mục vừa giải nén, chạy (thay năm đúng bản đang dùng):
 
@@ -12,7 +12,7 @@ Bản cập nhật 2.0 cho **Revit 2023 trên Windows x64**, .NET Framework 4.8.
    .\Install.ps1 -RevitVersion 2023
    ```
 
-4. Mở Revit. Nếu Revit hỏi tin cậy add-in chưa ký số, kiểm tra nguồn gói trước khi cho phép nạp. Tab **KẾT CẤU VIỆT** xuất hiện khi nạp thành công.
+4. Mở Revit 2023. Nếu Revit hỏi tin cậy add-in chưa ký số, kiểm tra nguồn gói trước khi cho phép nạp. Tab **KẾT CẤU VIỆT** xuất hiện khi nạp thành công. Bấm Hướng dẫn để xác nhận **2.0.1**; File version của `KetCauViet.Revit.dll` phải là **2.0.1.0**. Cài đè bằng script khi Revit đã đóng; không chép thêm một manifest trùng ở nơi khác.
 
 Cài theo người dùng, không cần quyền quản trị:
 - DLL và hướng dẫn: `%APPDATA%\Autodesk\Revit\Addins\2023\KetCauViet\`.
@@ -102,6 +102,8 @@ Có thép tăng cường dầm, đai ba vùng, đai phụ cột, móc 135°, lư
 
 Log theo host ở `%LOCALAPPDATA%\\KetCauViet\\Logs\\`; lỗi chính có Element ID, nhóm nguyên nhân và nút mở log. Nên chạy chế độ kiểm tra thử rồi hoàn tác trước trên mô hình mẫu.
 
+Bản 2.0.1 sửa lỗi `[BAR_TYPE] ... không thuộc tài liệu hiện tại hoặc đã mất hiệu lực` do kiểm tra Document bằng tham chiếu managed ở mã cũ. Danh sách chỉ hiển thị type hợp lệ của dự án hiện tại, kèm tên/đường kính danh nghĩa/ID; chọn riêng thép dọc, đai và phân bố. Lựa chọn được kiểm tra trước batch và trước mỗi lần tạo. Nếu type bị xóa/đổi hoặc Document đổi thì dừng một lần, yêu cầu chọn lại và hoàn tác thay đổi mới của batch. Thiếu type phải nạp/tạo đúng đường kính; không tự đổi sang loại khác. Xem [phân tích BAR_TYPE](docs/PHAN-TICH-LOI-BAR-TYPE.md).
+
 **Đánh số thép** có hai chế độ:
 - Native Revit Number trong Partition: các thanh được Revit coi là khớp có cùng số. Không tác động tới thép ngoài lựa chọn; nếu Partition đang có thép chưa chọn thì yêu cầu chọn đủ hoặc dùng Partition mới.
 - Mark: nhóm theo type, shape, móc và chiều dài từng đoạn làm tròn 0,1 mm; mã riêng dùng cho báo cáo. Mark không thay thế native Rebar Number. Với thép biến thiên, dùng chế độ native để theo cơ chế khớp của Revit.
@@ -120,7 +122,7 @@ Log theo host ở `%LOCALAPPDATA%\\KetCauViet\\Logs\\`; lỗi chính có Element
 dotnet test tests/KetCauViet.Core.Tests/KetCauViet.Core.Tests.csproj -c Release
 ```
 
-Test Core kiểm tra chuyển đơn vị, số/CSV, contour tiết diện, hệ trục xoay/nghiêng, fixture Join/Cut, cover/cung uốn, vùng đai, mối mở và đai phụ, giao thép và nối chồng phân đoạn. Các phép tính này không thay thế kiểm thử Revit.
+Test Core kiểm tra chuyển đơn vị, số/CSV, contour tiết diện, hệ trục xoay/nghiêng, fixture Join/Cut, cover/cung uốn, vùng đai, mối mở và đai phụ, giao thép và nối chồng phân đoạn. Có thêm test chính sách vòng đời type: chuyển dự án, mất/xóa/đổi type, lặp lệnh, ID trùng và batch 466 lượt resolve. Contract test đọc metadata/XML API 2023 để kiểm tra Document.Equals và nominal/model diameter, không nạp native Revit. Các test này không thay thế kiểm thử Revit.
 
 Kiểm tra bộ cài sau khi build, bằng PowerShell (mô phỏng đường dẫn Windows trong thư mục thử nghiệm, không mở Revit):
 

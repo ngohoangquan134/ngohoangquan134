@@ -38,7 +38,7 @@ Kiểm tra số cụ thể:
 - Dầm tạo 3 thép dưới/2 trên và đai a150; kiểm tra phương mặt cắt ở dầm xoay, dầm roll, dầm dốc. Kiểm tra cả móc 135° và lựa chọn khung kín không móc.
 - Cột nx=3, ny=3 có 8 thanh dọc; kiểm tra góc không bị đếm đôi.
 - Vách và sàn có hai phương không trùng tâm, lớp bảo vệ đo tới mặt thép.
-- Host có lỗ, T/I tiết diện, vát, cong hoặc thép cũ: báo bỏ qua; không lưu phần thép tạo dở. Thử một host đúng và một host lỗi trong cùng lựa chọn để xác nhận subtransaction.
+- Lỗ mở sàn/vách được clip theo biên; lồng đai bị cắt gián đoạn, tiết diện T/I hoặc trục cong phải từ chối cụ thể. Host có thép cũ mặc định giữ nguyên. Thử một host đúng và một host lỗi trong cùng lựa chọn để xác nhận transaction độc lập theo host.
 - Đánh số native: hai thanh giống nhau cùng số, khác hình dạng khác số. Partition có thép ngoài lựa chọn không bị đổi số.
 - Đánh Mark cấu kiện: giữ mã cũ, không trùng mã đã dùng ở phần còn lại dự án; thử nhóm workshared không có quyền sửa.
 - Sàn mẫu thể tích 4×5×0,2 = 4 m³ nếu không cắt/join. Diện tích mặt trên 20 m²; hai lớp chống thấm bù 5% = 42 m².
@@ -74,3 +74,20 @@ Các ca sau **chưa thực hiện trong Revit**. Chạy bằng chế độ kiể
 | F01 | Worksharing không có quyền sửa; cố ý gây native failure | Log native error/warning, không bỏ qua failure để commit | Chưa chạy |
 
 Không phát hành hồ sơ thiết kế/thi công chỉ từ kết quả kiểm tra tự động trên cloud.
+
+## Hồi quy BAR_TYPE bản 2.0.1 trong Revit 2023
+
+**Tất cả ca dưới đây chưa chạy trong Revit thật.** Build/fixture cloud kiểm tra chính sách scope/định danh, không xác nhận bộ giải hoặc dữ liệu native. Chạy trên bản sao mô hình, ghi build Revit, ID/UniqueId từng type và log 2.0.1. Kiểm tra lại trên mô hình nhà 10 tầng với nhóm 3 ID ban đầu, rồi mới thử 466 host.
+
+| Ca | Thiết lập và thao tác trong Revit 2023 | Kết quả cần xác nhận | Trạng thái native |
+|---|---|---|---|
+| BT01 — đủ type | Dự án có D8/D12/D16/D20. Chọn dọc D16, đai D8; vách/sàn chọn chính D16 và phân bố D12. Thử nominal khác model | Danh sách đúng Document/tên/nominal/ID; log native owner.Equals true; tạo đúng type cho từng role, cover theo model diameter. Nhập D20 phải xác nhận type; nhập D18 thiếu phải dừng | Chưa chạy |
+| BT02 — thiếu type | Tạo dự án thử không có RebarBarType hoặc không có bend hợp lệ cho role | Một thông báo NO_VALID_TYPES có hướng dẫn nạp/tạo. Không mở transaction, không báo lỗi lặp theo số host. Nạp type hợp lệ rồi chạy lại được | Chưa chạy |
+| BT03 — hai dự án | Mở A/B đồng thời, chọn loại khác ở mỗi dự án và luân phiên chạy lệnh nhiều lần. Test harness thay active Document sau snapshot ở API context hợp lệ | Danh sách lấy mới ở mỗi lần; không mang lựa chọn A sang B. Đổi active sau snapshot bị DOCUMENT_CHANGED; không sửa nhầm dự án | Chưa chạy |
+| BT04 — xóa/đổi type | Dùng harness API context hợp lệ giữa snapshot và preflight: xóa type, đổi tên, nominal/model, bend hoặc tham số khác; thử sửa giữa các host | TYPE_DELETED/TYPE_CHANGED, yêu cầu mở lại lệnh. Preflight trước batch không sửa model; phát hiện giữa batch thì rollback cả nhóm. Không lặp 466 lỗi | Chưa chạy |
+| BT05 — hàng loạt | 466 dầm/cột: host hợp lệ, xoay, Join/Cut và một host không hỗ trợ; thử 3 ID 429207/429218/429229 trước | Type hợp lệ không bị từ chối vì wrapper khác tham chiếu; mỗi host lấy lại type. Lỗi PROFILE/COVER/HOST riêng không chặn host đúng. Không lưu cage dở | Chưa chạy |
+| BT06 — lặp lệnh | Dry-run, chạy lưu, Undo, chạy lại, thử host lỗi hook để gây SubTransaction rollback, rồi chạy thêm trong cùng phiên | Không giữ wrapper chết; mỗi lệnh có scope mới. Dry-run/Undo không để lại type/hook/shape/thép mới. Log đúng version 2.0.1 | Chưa chạy |
+| BT07 — thép cũ | Trước khi chạy, ghi ID/UniqueId/type và đường tâm thép cũ. Thử chế độ mặc định, thêm hợp lệ, thêm bị giao và lỗi type chung | Mặc định bỏ qua host cũ. Khi thêm/lỗi/rollback, thép cũ giữ nguyên ID, type, tọa độ, số vị trí. Không xóa/di chuyển/đổi type hoặc tạo dở | Chưa chạy |
+| BT08 — tên trùng | A/B có cùng tên type D16; dùng Save As để có thể giữ cả ID/UniqueId giống nhau. Trong A cũng thử hai type tên/diameter gần giống | Không dùng tên, Title hoặc ID đơn lẻ để kết luận cùng Document. Scope khác bị từ chối; UI kèm ID để chọn chính xác. Chọn đúng type ở mỗi dự án | Chưa chạy |
+
+Fixture cloud kiểm tra wrapper khác tham chiếu nhưng native identity bằng nhau, type thiếu/xóa/mất hiệu lực/đổi, trùng ID/UID/tên giữa phạm vi khác nhau, đường kính/bend sai, ba role và 466 lượt resolve với wrapper mới. Việc giữ nguyên thép cũ và kết quả transaction native ở BT05–BT07 vẫn cần xác nhận trong Revit.

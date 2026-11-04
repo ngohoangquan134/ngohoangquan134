@@ -11,5 +11,9 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+    <!-- Reference metadata is test data, never a net8 runtime/compile dependency. -->
+    <PackageDownload Include="Nice3point.Revit.Api.RevitAPI" Version="[2023.0.1]" />
+    <None Include="$(NuGetPackageRoot)/nice3point.revit.api.revitapi/2023.0.1/ref/net48/RevitAPI.dll" Link="contracts/RevitAPI.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(NuGetPackageRoot)/nice3point.revit.api.revitapi/2023.0.1/ref/net48/RevitAPI.xml" Link="contracts/RevitAPI.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
